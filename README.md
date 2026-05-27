@@ -1,0 +1,410 @@
+# BF 全流程测试工作流 (bf-test-workflow)
+
+一套基于 Claude Code 的企业级测试自动化 Skill 体系，覆盖从需求文档到 E2E 测试的完整生命周期。支持 **Sprint 双轨迭代模式**，借鉴 Git 分支思想管理测试资产。
+
+---
+
+## 核心特性
+
+| 特性 | 说明 |
+|------|------|
+| **Sprint 双轨迭代** | sprint0 基线 + sprintN 增量，sprint_all 汇总版持续更新 |
+| **三种输入模式** | 需求文档驱动 / UI 探索驱动 / 混合模式 |
+| **智能调度** | 主 Skill 调度，5 个专用 Agent 并行执行 |
+| **断言质量保障** | 19 种语义断言映射 + 禁止弱断言 + 自动校验修复 |
+| **选择器提取** | 使用 extract-selectors.js 确定性提取，不依赖 AI 推断 |
+| **完整闭环** | 功能点 -> 测试用例 -> E2E 脚本 -> 执行修复 -> 结果回写 |
+| **灵活回归** | 全量回归 / 精准回归 / 单模块回归三种模式 |
+
+---
+
+## 架构概览
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    bf-test-workflow (主 Skill)                   │
+│                     调度层 / 入口 / Sprint 管理                   │
+└───────────────────────┬─────────────────────────────────────────┘
+                        │
+    ┌───────────────────┼───────────────────┬───────────────────┐
+    ▼                   ▼                   ▼                   ▼
+┌─────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  探索层  │     │   用例层     │     │   生成层     │     │   修复层     │
+│bf-ui-   │     │bf-case-     │     │bf-e2e-      │     │bf-e2e-      │
+│explorer │     │generator    │     │generator    │     │healer       │
+└─────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+    │                   │                   │                   │
+    ▼                   ▼                   ▼                   ▼
+ 功能点.md          cases.json         *.spec.ts          修复后测试
+                                               │
+                                               ▼
+                                        bf-e2e-validator
+                                           (断言校验)
+```
+
+### Agent 职责划分
+
+| Agent | 职责 | 工具权限 |
+|-------|------|----------|
+| **bf-ui-explorer** | 浏览器探索系统，发现功能点 | 浏览器 + 创建文件 |
+| **bf-case-generator** | 生成测试用例 JSON | 纯文件读写（无浏览器） |
+| **bf-e2e-generator** | 录制选择器 + 生成 E2E 脚本 | 浏览器 + 创建文件 |
+| **bf-e2e-validator** | 校验断言与预期对齐 | 文件读写 + 编辑 |
+| **bf-e2e-healer** | 执行测试 + 诊断修复 + 回写结果 | 编辑 + Bash + 浏览器诊断 |
+
+---
+
+## Sprint 双轨迭代模式
+
+新版 Skill 引入 Sprint 迭代机制，借鉴 Git 的分支-合并思想：
+
+```
+需求文档/sprint0/  ──>  sprint0/（基线快照）
+                     ↘
+需求文档/sprintN/  ──>  sprintN/（增量快照）──> 覆盖回 sprint_all/（汇总版）
+```
+
+### Git 类比
+
+| Git 概念 | Skill 对应 |
+|---------|-----------|
+| main 分支 | sprint_all/（汇总版） |
+| feature 分支 | sprintN/（增量版） |
+| 基线提交 | sprint0/（初始稳定版本） |
+| git merge | 增量 Step 5：覆盖回 sprint_all |
+| git diff | 增量 Step 1：对比 sprint_all 识别变更模块 |
+| CI 精准测试 | 只跑 sprintN 变更模块 |
+| nightly 全量测试 | 跑 sprint_all 所有模块 |
+
+### 调用方式
+
+```
+/bf-test-workflow              → 全量模式（处理 sprint0，输出到 sprint0/ 和 sprint_all/）
+/bf-test-workflow sprintN      → 增量模式（处理 sprintN，变更覆盖回 sprint_all/）
+```
+
+### 增量流程（sprintN 专属）
+
+1. **解析 PRD**：识别变更模块，对比 sprint_all 区分已有/新增
+2. **用户确认**：展示模块列表，用户可补充或删除
+3. **复制文件**：从 sprint_all 复制相关文件到 sprintN
+4. **增量处理**：更新功能点.md → 生成 cases.json（完整快照）→ 更新 E2E 脚本
+5. **覆盖回写**：将变更模块覆盖回 sprint_all
+6. **流程衔接**：展示完成状态和后续命令
+
+### 合并规则
+
+| 场景 | 处理方式 |
+|------|---------|
+| 修改已有功能点 | 覆盖 sprint_all |
+| 删除已有功能点 | 从 sprint_all 删除 |
+| 新增功能点 | 追加到 sprint_all |
+| 修改已有用例（同ID） | 覆盖 sprint_all |
+| 新增用例（新ID） | 追加到 sprint_all |
+| 新增模块 | 在 sprint_all 创建新目录 |
+
+### 回归测试
+
+```
+# 全量回归（sprint_all 所有模块）
+npx playwright test --config=测试用例/sprint_all/scripts/playwright.config.ts
+
+# 精准回归（只跑 sprintN 变更模块）
+npx playwright test --config=测试用例/sprintN/sprintN_scripts/playwright.config.ts
+
+# 单模块回归
+npx playwright test 测试用例/sprint_all/scripts/{模块名}.spec.ts
+```
+
+---
+
+## 三种工作模式
+
+### 模式 A：主需求文档辅 UI 探索
+
+需求文档完整，以文档为主，UI 探索补充文档未提及的功能。
+
+### 模式 B：主 UI 探索辅需求文档
+
+需求文档不完整，以 UI 探索为主，文档补充业务细节。
+
+### 模式 C：纯 UI 探索
+
+无需求文档，完全依赖浏览器探索。
+
+### 混合模式
+
+用户指定某些模块不完整，不完整的模块按模式 B 处理，其他模块按模式 A 处理。
+
+---
+
+## 完整流程
+
+### 阶段 1：功能点发现
+
+**输入**：需求文档 或 运行中的 Web 应用
+
+**输出**：`需求文档/{sprint}/需求功能点/{模块名}/功能点.md`
+
+功能点文件结构：
+```markdown
+# {模块名} 功能点
+
+## 功能点1：{功能名称}
+
+- **描述**：{功能描述}
+- **操作入口**：{如何到达该功能}
+- **交互元素**：{表单字段、按钮、表格等}
+- **业务规则**：{必填项、格式要求、校验规则}
+- **优先级**：{高/中/低}
+- **来源**：需求文档 / UI探索
+```
+
+### 阶段 2：测试用例生成
+
+**输入**：功能点.md
+
+**输出**：`需求文档/{sprint}/需求功能点/{模块名}/cases.json`
+
+用例格式：
+```json
+{
+  "id": "SPD_TC_SJZH_001",
+  "module": "数据整合",
+  "title": "正常登录并查看数据列表",
+  "precondition": "1. 系统可访问；2. 测试账号有效",
+  "test_data": "账号: {TEST_PHONE}, 密码: {TEST_PASSWORD}",
+  "steps": "1. 用户输入用户名、密码点击登录。\n2. 点击「数据整合」菜单。\n3. 查看数据列表。",
+  "expected": "1. 登录成功，跳转首页。\n2. 进入数据整合页面。\n3. 列表正确加载，显示数据。"
+}
+```
+
+**覆盖率检查**：低于 80% 自动补充用例。
+
+### 阶段 3：E2E 脚本生成
+
+**输入**：cases.json
+
+**输出**：
+- `{脚本路径}/selectors/{模块名}.selectors.ts` — 选择器映射（Page Object）
+- `{脚本路径}/{模块名}.spec.ts` — Playwright 测试脚本
+- `{脚本路径}/fixtures/login.fixture.ts` — 共享登录 fixture
+- `{脚本路径}/playwright.config.ts` — Playwright 配置
+
+**生成流程**：
+1. 录制核心链路（1-3 条用例），理解页面布局
+2. 使用 extract-selectors.js 提取真实选择器（确定性逻辑，不依赖 AI）
+3. 生成 selectors.ts（Page Object Model）
+4. 批量生成 spec.ts（从 cases.json 文本生成）
+5. 自动校验断言质量（bf-e2e-validator）
+
+### 阶段 4：执行与修复
+
+**输入**：spec.ts 文件
+
+**输出**：
+- 修复后的测试脚本
+- testCase.xlsx 实际结果回写
+- 执行报告摘要
+- 失败用例截图（`测试截图/{模块名}-{用例ID}-failed.png`）
+
+**修复策略**：
+- 检测系统性失败（选择器层面）→ 批量修复 selectors.ts
+- 检测个体性失败（断言/等待）→ 逐条修复 spec.ts
+- 最多 3 轮修复，仍失败则标记失败并截图
+- **严格规则**：不允许修改预期结果值，实际值不符应标记为 bug
+
+---
+
+## 选择器提取机制
+
+使用 extract-selectors.js 确定性逻辑提取页面选择器，不依赖 AI 推断：
+
+```
+选择器优先级：
+1. #id                    → page.locator('#xxx')
+2. [data-testid="xxx"]    → page.getByTestId('xxx')
+3. .arco-xxx class        → page.locator('.arco-xxx')
+4. tag + text             → page.locator('button').filter({ hasText: 'xxx' })
+```
+
+---
+
+## 断言质量保障
+
+### 禁止的弱断言
+
+```typescript
+// ❌ 禁止
+expect(something).toBeTruthy()
+expect(count).toBeGreaterThanOrEqual(0)
+expect(text).not.toBe('')
+
+// ✅ 必须
+expect(text).toContainText('具体值')
+expect(count).toBe(5)
+expect(button).toBeVisible()
+```
+
+### 自动校验流程
+
+bf-e2e-validator 逐条比对 cases.json 的 expected 和 spec.ts 的 expect()：
+- 弱断言 → 自动修复为强断言
+- 缺失断言 → 补充断言
+- 断言不匹配 → 修正断言
+- 校验报告 → `reports/validation/{模块名}-validation.md`
+
+---
+
+## 环境要求
+
+### Skills 存放位置
+
+```
+Windows:  C:\Users\{用户名}\.claude\skills\
+macOS:    ~/.claude/skills/
+Linux:    ~/.claude/skills/
+```
+
+### 完整路径结构
+
+```
+.claude/skills/
+├── bf-test-workflow.md          # 主 Skill（调度层入口）
+├── init-bf.md                   # 项目初始化 Skill
+├── agents/                      # Agent 定义文件
+│   ├── bf-ui-explorer.md
+│   ├── bf-case-generator.md
+│   ├── bf-e2e-generator.md
+│   ├── bf-e2e-validator.md
+│   ├── bf-e2e-healer.md
+│   └── install.sh
+├── templates/                   # 模板文件
+│   ├── claude-md.md
+│   ├── page-object.ts
+│   ├── login-fixture.ts
+│   ├── assertion-mapping.md
+│   ├── write-results.py
+│   ├── extract-selectors.js
+│   └── sub-agent-prompt.md
+└── scripts/
+    └── json_to_excel.py
+```
+
+---
+
+## 项目初始化
+
+### 前置条件
+
+| 项目 | 说明 | 示例 |
+|------|------|------|
+| **项目前缀** | 2-4 位大写字母 | SPD、NJ、BF |
+| **系统地址** | 被测系统 URL | http://your-test-system.example.com/ |
+| **测试账号** | 登录用户名 | 13800138000 |
+| **测试密码** | 对应密码 | your_password_here |
+
+### 初始化方式
+
+```bash
+# 自动探测（推荐）
+/init-bf
+
+# 手动指定参数
+/init-bf SPD http://your-test-system.example.com/login 13800138000 your_password_here
+
+# 混合方式
+/init-bf SPD
+```
+
+### 初始化内容
+
+1. 生成项目 CLAUDE.md
+2. 创建 Sprint 目录结构（sprint0/、sprint_all/）
+3. 安装 Agent 到 .claude/agents/（4 个 Agent）
+
+### 推荐的项目目录结构
+
+```
+项目根目录/
+├── CLAUDE.md
+├── 需求文档/
+│   ├── sprint0/                     # 基线版本需求文档
+│   ├── sprint1/                     # Sprint1 增量需求文档
+│   └── sprint_all/                  # 汇总版本
+│       └── 需求功能点/
+│           ├── 模块A/
+│           │   ├── 功能点.md
+│           │   └── cases.json
+│           └── 模块B/
+├── 测试用例/
+│   ├── 测试用例模板.xlsx
+│   ├── sprint0/
+│   │   ├── sprint0_testCase.xlsx
+│   │   └── sprint0_scripts/
+│   ├── sprint_all/
+│   │   ├── testCase.xlsx
+│   │   └── scripts/
+│   └── sprintN/
+│       ├── sprintN_testCase.xlsx
+│       └── sprintN_scripts/
+├── 测试截图/
+├── reports/
+└── config/
+```
+
+---
+
+## 命令速查
+
+| 命令 | 说明 |
+|------|------|
+| `/init-bf` | 初始化项目配置 + Sprint 目录结构 |
+| `/bf-test-workflow` | 全量模式（处理 sprint0） |
+| `/bf-test-workflow sprint1` | 增量模式（处理 sprint1） |
+| 后接 "开始UI测试" | 进入 E2E 脚本生成 |
+| 后接 "开始接口测试" | 进入接口测试用例生成 |
+| 后接 "开始执行测试" | 运行 E2E 测试并自动修复 |
+| 后接模块名 | 只执行指定模块 |
+
+---
+
+## 注意事项
+
+1. **首次使用前**：必须先执行 `/init-bf` 初始化项目配置
+2. **Agent 安装后**：需重启 Claude Code 会话才能发现新 Agent
+3. **Sprint 目录**：每个 sprint 文件夹是独立完整快照，可独立运行回归
+4. **增量模式**：功能点.md 写增量（只含变更），cases.json 写完整快照（含所有用例）
+5. **合并回写**：增量完成后必须覆盖回 sprint_all，保持汇总版最新
+6. **JSON 格式**：菜单名、按钮名使用「」包裹，禁止使用双引号
+7. **选择器优先级**：id > data-testid > arco- class > tag+text
+8. **断言失败不改脚本**：断言失败时记录实际值和预期值差异，标记为失败
+9. **回归不消耗 token**：修复完成后可直接运行 npx playwright test
+
+---
+
+## 常见问题
+
+### Q: 全量模式和增量模式有什么区别？
+
+A: 全量模式（`/bf-test-workflow`）处理 sprint0 基线，同时输出到 sprint0/ 和 sprint_all/。增量模式（`/bf-test-workflow sprintN`）只处理 sprintN 的变更模块，完成后覆盖回 sprint_all/。
+
+### Q: sprint_all 和 sprintN 的关系是什么？
+
+A: sprint_all 类似 Git 的 main 分支，是所有模块的汇总版。sprintN 类似 feature 分支，是某次迭代的增量快照。增量处理完成后，变更会合并回 sprint_all。
+
+### Q: 覆盖率低于 80% 怎么办？
+
+A: 系统会自动启动 bf-case-generator 补充用例，直至达到 80% 覆盖率。
+
+### Q: E2E 修复超过 3 轮怎么办？
+
+A: 失败用例会被截图保存到 `测试截图/{模块名}-{用例ID}-failed.png`，并在报告中标注失败原因，交由测试人员判断。
+
+### Q: 回归测试还需要消耗 token 吗？
+
+A: 不需要。修复完成后可直接运行 npx playwright test，支持三种回归模式：全量回归（sprint_all）、精准回归（sprintN）、单模块回归。
+
+### Q: 如何查看断言校验报告？
+
+A: 查看 `reports/validation/{模块名}-validation.md`，包含问题清单和修复状态。
