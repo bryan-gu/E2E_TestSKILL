@@ -1,4 +1,5 @@
 ---
+name: bf-test-workflow
 description: 从需求文档或UI探索到UI自动化测试的全流程，支持文档驱动、UI探索驱动和混合模式。支持全量模式（sprint0）和增量模式（sprintN）
 ---
 
@@ -29,6 +30,10 @@ description: 从需求文档或UI探索到UI自动化测试的全流程，支持
 
 ### Step 0：检测项目资源
 
+0. 检查运行环境是否就绪：
+   - 确认 Python 可用（`python --version`）
+   - 确认 openpyxl 已安装（`python -c "import openpyxl"`），若缺失提示用户执行 `pip install -r requirements.txt`
+   - 确认 Playwright MCP 工具可用（尝试调用 `browser_snapshot`），若不可用提示用户配置 MCP Server
 1. 从 CLAUDE.md 提取项目配置（系统地址、测试账号、脚本存放路径等）。若缺失提示用户先执行 `/init-bf`。
 2. 解析参数，判断运行模式：
    - 无参数 → **全量模式**，扫描 `需求文档/sprint0/` 目录

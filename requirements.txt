@@ -1,0 +1,4 @@
+# BF 测试 Skill Python 依赖
+python-docx
+openpyxl
+pypdf

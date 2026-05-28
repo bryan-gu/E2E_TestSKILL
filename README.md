@@ -1,5 +1,7 @@
 # BF 全流程测试工作流 (bf-test-workflow)
 
+> v1.0.0
+
 一套基于 Claude Code 的企业级测试自动化 Skill 体系，覆盖从需求文档到 E2E 测试的完整生命周期。支持 **Sprint 双轨迭代模式**，借鉴 Git 分支思想管理测试资产。
 
 ---
@@ -266,10 +268,35 @@ macOS:    ~/.claude/skills/
 Linux:    ~/.claude/skills/
 ```
 
+### 安装方式
+
+```bash
+# 克隆仓库后，运行全局安装脚本
+bash install.sh
+
+# 安装 Python 依赖
+pip install -r requirements.txt
+```
+
+安装完成后重启 Claude Code 会话，在被测项目中执行 `/init-bf` 初始化。
+
+### 环境依赖
+
+| 依赖 | 说明 | 安装方式 |
+|------|------|---------|
+| **Claude Code CLI** | Skill 运行基础 | 参见 [Claude Code 文档](https://docs.anthropic.com/en/docs/claude-code) |
+| **Node.js** | Playwright 运行时 | [nodejs.org](https://nodejs.org/) |
+| **Playwright** | 浏览器自动化 | `npm install -g @anthropic-ai/mcp-server-playwright` 并在 Claude Code MCP 配置中注册 |
+| **Chromium** | Playwright 浏览器引擎 | `npx playwright install chromium` |
+| **Python 3** | 文档解析、Excel 处理 | 系统自带或 [python.org](https://python.org/) |
+| **Python 包** | python-docx、openpyxl、pypdf | `pip install -r requirements.txt` |
+
 ### 完整路径结构
 
 ```
-.claude/skills/
+仓库目录（发布前）:
+├── install.sh                   # 全局安装脚本
+├── requirements.txt             # Python 依赖
 ├── bf-test-workflow.md          # 主 Skill（调度层入口）
 ├── init-bf.md                   # 项目初始化 Skill
 ├── agents/                      # Agent 定义文件
@@ -278,7 +305,7 @@ Linux:    ~/.claude/skills/
 │   ├── bf-e2e-generator.md
 │   ├── bf-e2e-validator.md
 │   ├── bf-e2e-healer.md
-│   └── install.sh
+│   └── install.sh               # 项目级 Agent 安装脚本
 ├── templates/                   # 模板文件
 │   ├── claude-md.md
 │   ├── page-object.ts
@@ -289,6 +316,13 @@ Linux:    ~/.claude/skills/
 │   └── sub-agent-prompt.md
 └── scripts/
     └── json_to_excel.py
+
+安装后 ~/.claude/skills/:
+├── bf-test-workflow.md
+├── init-bf.md
+├── agents/                      # Agent 定义 + 项目级安装脚本
+├── templates/                   # 模板文件
+└── scripts/                     # 工具脚本
 ```
 
 ---
