@@ -15,6 +15,9 @@ tools: Read, Write, Glob, Grep, mcp__playwright__browser_click, mcp__playwright_
 - 用例文件路径（如 `需求文档/sprint0/需求功能点/{模块名}/cases.json` 或 `需求文档/sprintN/需求功能点/{模块名}/cases.json`）
 - 已有脚本路径（可选，增量模式时传入，需在已有基础上追加/修改）
 - 已有选择器路径（可选，增量模式时传入，需在已有基础上追加/修改）
+- **V2 影响面范围（可选注入，增量模式时由主对话从图谱 query 拼装）**：
+  - `impact_review_case_ids`：需复核的用例 ID 列表（impact 命中下游，断言可能失效）
+  - `setup_fixture_case_ids`：数据准备用例 ID 列表（setup 命中上游，作为 fixture 复用）
 
 ## 工作流程
 
@@ -83,3 +86,8 @@ browser_evaluate({
 - toast/notification 使用 `[class*="toast"], [class*="message"], [class*="notification"]` 定位
 - 生成完成后报告：生成了哪些文件、用例总数、选择器数量
 - 增量模式时，如果已有脚本和选择器路径，必须先 Read 已有内容，在 Write 时将已有内容完整保留并仅追加/修改变更部分，不得覆盖或丢失已有的 test() 块和选择器
+- **V2 影响面范围规则**（增量模式且主对话注入了 `impact_review_case_ids` / `setup_fixture_case_ids` 时生效）：
+  - 只对 `impact_review_case_ids` 列表中的用例 test() 块进行修改/重写（这些断言可能因下游变更失效，需重新录制 + 重新生成断言）
+  - `setup_fixture_case_ids` 中的用例**不动其实现**，但其他用例如需依赖它们准备的数据，应通过 `test.describe.serial` 或调用其关键步骤作为前置（**不要复制粘贴 setup 用例的代码**，复用既有实现）
+  - 未在两个列表中的用例 test() 块**保持原样不修改**，即使读到了也要完整保留
+  - 若主对话未注入影响面范围（全量模式 sprint0 或新模块），按 V1 行为：所有用例都生成 test() 块

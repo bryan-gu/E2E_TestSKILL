@@ -1,4 +1,12 @@
-# BF 测试 Skill Python 依赖
-python-docx
-openpyxl
-pypdf
+# BF 测试 Skill 依赖
+# 安装：pip install -r ~/.claude/skills/requirements.txt
+
+# V1：用例 / 文档 / Excel 处理
+python-docx>=0.8.11
+openpyxl>=3.0.0
+pypdf>=3.0.0
+
+# V2 知识图谱（build_index.py）
+# sqlite3：Python 标准库内置，无需 pip 安装。
+# FTS5：随 sqlite3 内置；若发行版剥离了 FTS5 编译选项，build_index.py
+#       会自动降级为 LIKE 查询（功能等价，性能略低）。无需 pip 安装。

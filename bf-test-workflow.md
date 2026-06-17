@@ -10,6 +10,9 @@ description: 从需求文档或UI探索到UI自动化测试的全流程，支持
 - **bf-e2e-generator**：录制选择器 + 生成 E2E 脚本（浏览器 + 创建文件）
 - **bf-e2e-validator**：校验断言质量，比对 expected 与 expect()（仅文件读写）
 - **bf-e2e-healer**：执行测试 + 修复 + 回写结果（编辑 + Bash + 浏览器诊断）
+- **bf-graph-agent**（V2 新增）：带 Bash 专属跑 `~/.claude/skills/scripts/build_index.py` 维护 SQLite 知识图谱，提供 5 个查询原语（coverage / impact / setup / flow / recall）+ apply-confirmation 写 manual 边。主对话把图谱相关 DB 操作全部交它执行；**AskUserQuestion 一律主对话发起**，子 agent 无法问用户
+
+**两条铁律**：① 图谱构建/查询专属 **bf-graph-agent**（带 Bash）；生成类 agent 纯文本生成器，消费主对话注入的结果。② Bash 分工——bf-graph-agent 只管 DB 操作（build/query/apply-confirmation），文件操作（cp/diff/mkdir）留主对话。
 
 请严格按以下阶段执行，根据用户当前提供的资源自动推进流程。
 
@@ -82,7 +85,7 @@ description: 从需求文档或UI探索到UI自动化测试的全流程，支持
 ```markdown
 # {模块名} 功能点
 
-## 功能点1：{功能名称}
+## 功能点1：{功能名称} <!--FP_{模块缩写}_01-->
 
 - **描述**：{从需求文档提取的功能描述，用自己的话概括，不要照搬原文}
 - **操作入口**：{文档中描述的功能入口路径，如"点击左侧菜单'{模块名}' → 点击'新增'按钮"；文档未提及则写"文档未提及"}
@@ -96,6 +99,7 @@ description: 从需求文档或UI探索到UI自动化测试的全流程，支持
 - 每个字段都必须填写，不可省略；文档确实未提及的字段写"文档未提及"，不要留空或跳过
 - 描述要具体可理解，不要照搬文档原文的模糊表述
 - 业务规则要尽量提取具体的约束条件（字段长度、格式要求、必填/选填），不要只写"按文档要求"
+- **每个功能点标题必须带 FP 锚点**：格式 `## 功能点N：{名称} <!--FP_{模块缩写}_{两位序号}-->`，序号在模块内从 01 连续递增；`{模块缩写}` 必须与后续用例 ID 中的缩写一致（如 `下单` → `XD` → `FP_XD_01`、`SPD_TC_XD_001`）。锚点为 HTML 注释，对 V1 脚本与人类阅读无害
 6. 报告：生成了哪些模块、每个模块多少功能点。
 
 ### A2. UI 探索补充（辅）
@@ -178,6 +182,107 @@ Agent prompt：
 
 以下阶段在所有模式中完全一致，输入路径由当前 sprint 决定。
 
+### G1. 骨架图谱闸门（V2 新增，所有模式收敛后执行）
+
+**前提**：模式 A / B / C 中至少一个已完成所有功能点.md 的生成与合并（A1→A2→A3 / B1→B2 / C1），`需求文档/{sprint}/需求功能点/` 下所有模块的功能点.md 已就绪且每个标题都带 FP 锚点。
+
+> ⚠️ **此闸门必须在所有功能点探索完成后才执行**——A2 的 UI 探索、A3 的合并去重、B/C 的探索都可能新增功能点；如果先建图谱再补功能点，新增的 FP 锚点与跨模块依赖会丢失，图谱不完整。
+
+> ⚠️ **增量模式（sprintN）不走此闸门**：增量模式有自己的 Step1-Step6 流程，Step1 已包含 build，Step2 已是用户确认。G1 仅用于**全量模式（sprint0）首次建立项目骨架图谱**。
+
+#### G1.1 全量模式 merge sprint0 → sprint_all（仅全量模式）
+
+图谱只扫 `需求文档/sprint_all/`（单一真相源），而 A2/A3 与 B/C 的探索产物默认只写 sprint0（或 sprintN）。建图前必须先 merge：
+
+```bash
+# 全量模式：sprint0 全量覆盖回 sprint_all（功能点.md / cases.json）
+cp -rf 需求文档/sprint0/需求功能点/* 需求文档/sprint_all/需求功能点/
+```
+
+> A1 文档解析阶段已双写 sprint0 + sprint_all，但 A2/A3 后续更新只写 sprint0。
+> 此处 merge 是为了把 A2/A3 的合并结果同步到 sprint_all，确保单一真相源数据完整。
+> 增量模式的 merge 在增量 Step5 处理，此步仅全量模式执行。
+
+#### G1.2 建骨架图谱（主对话调度 bf-graph-agent）
+
+```
+subagent_type: bf-graph-agent
+Agent prompt：
+任务类型：build
+项目根：{当前项目根}
+mode：rebuild（首次或大改时 DROP 重建）
+sprint_tag：sprint0
+```
+
+agent 执行：
+```bash
+python ~/.claude/skills/scripts/build_index.py \
+  --project {项目根} --source sprint_all --rebuild --sprint-tag sprint0
+```
+
+> 注意：`--build` 与 `--rebuild` 互斥。骨架建图用 `--rebuild`（DROP 后重建）。
+> 后续 upsert 增量更新用 `--build`（或不传，默认 upsert）。
+
+产物（固定 `{项目根}/需求文档/sprint_all/索引/`）：
+- `知识图谱.db` / `知识图谱.json`
+- `覆盖率报告.md`（此时还无 covers 边，覆盖率为 0；FP 节点已就位）
+- `流程依赖图.md`（Mermaid，fp 节点 + precedes/depends_on/step_in_flow 边）
+- `待确认依赖.md`（启发式推断但需人工确认的依赖清单）
+
+agent 把 db_path、流程依赖图节点/边统计、**unresolved_deps 条数与摘要**返回主对话。
+
+#### G1.3 人工确认依赖（主对话发起 AskUserQuestion）
+
+主对话拿到 G1.2 返回的「待确认依赖清单」后，**通过 AskUserQuestion 向用户逐条确认**（子 agent 无法问用户）：
+
+```
+图谱发现 N 条启发式依赖需要您确认：
+
+1. 下单.FP_XD_01「选择商品」 precedes 下单.FP_XD_02「支付」
+   推断理由：PRD「下单流程」章节有序步骤 1.选商品 → 2.支付
+   ☑ 确认    ☐ 拒绝    ☐ 修改（请补充正确关系）
+
+2. ...
+```
+
+用户对每条选择「确认 / 拒绝 / 修改」。所有条目处理完后，主对话把确认结果组装成 JSON，**调度 bf-graph-agent** `apply-confirmation`：
+
+```
+subagent_type: bf-graph-agent
+Agent prompt：
+任务类型：apply-confirmation
+项目根：{当前项目根}
+确认 JSON：
+{
+  "edges": [
+    {"source":"FP_XD_01","target":"FP_XD_02","kind":"precedes","metadata":{"via_flow":"FLOW_下单流程","order":1}},
+    {"source":"FP_XD_02","target":"FP_XD_01","kind":"depends_on","metadata":{"via_flow":"FLOW_下单流程"}}
+  ]
+}
+```
+
+agent 执行：
+```bash
+python ~/.claude/skills/scripts/build_index.py \
+  --project {项目根} --source sprint_all \
+  --apply-confirmation '{"edges":[...]}'
+```
+
+写入 `manual` 边 + 清空 unresolved_deps。
+
+> 若 G1.2 返回的 unresolved_deps 为 0（图谱推断充分无歧义），跳过此步直接进 G1.4。
+
+#### G1.4 暂停等继续
+
+完成后**主对话暂停流程**，输出：
+
+```
+⏸️ 骨架图谱已就绪（{X} 个 FP / {Y} 条依赖 / {Z} 条 manual 边）。
+请回复「继续」进入 P1（生成测试用例）。
+```
+
+用户回复后进入 P1。**这一步是 V2 关键质量闸门**——图谱中的跨模块依赖在此时被人工锚定，后续覆盖率/影响面/流程注入都依赖此锚定结果。
+
 ### P1. 生成测试用例（Agent 并行方案）
 
 #### P1.1 准备工作（主对话执行）
@@ -187,7 +292,30 @@ Agent prompt：
 3. 统计 `需求文档/{sprint}/需求功能点/` 下所有模块，为每个模块确定**模块缩写**。
 4. 确认脚本存在：`~/.claude/skills/scripts/json_to_excel.py`。
 
-#### P1.2 启动 bf-case-generator Agent（并行）
+#### P1.2 启动 bf-case-generator Agent（并行，V2 流程上下文注入）
+
+V2 改造：启动 generator 前，**主对话先对每个模块的每个 fp 调度 bf-graph-agent** `query flow`，把返回的 JSON 作为「V2 流程上下文」拼进 generator prompt。
+
+##### P1.2.0 准备流程上下文（V2 新增，主对话调度 bf-graph-agent）
+
+```
+subagent_type: bf-graph-agent
+Agent prompt：
+任务类型：query
+子命令：query flow
+项目根：{当前项目根}
+fp 列表：FP_XD_01、FP_XD_02、FP_SJZH_01、...（P0 由 A1 锚点 / 当前模块扫描得出）
+```
+
+agent 执行（每个 fp 一次调用，或主对话循环）：
+```bash
+python ~/.claude/skills/scripts/build_index.py \
+  --project {项目根} --source sprint_all --query flow --query-arg FP_XD_01
+```
+
+返回 `{fp, upstream, downstream, apis, rules, flow, existing_covers}` 索引层包，主对话把它原样拼进下方 generator prompt。
+
+##### P1.2.1 启动 generator（含 V2 上下文）
 
 将模块按每批 2-3 个分组，每批启动 1 个 Agent：
 
@@ -205,6 +333,22 @@ Agent prompt 示例：
 请读取以下功能点文件并生成测试用例 JSON：
 - 需求文档/{sprint}/需求功能点/数据整合/功能点.md
 - 需求文档/{sprint}/需求功能点/物料协同看板/功能点.md
+
+【V2 流程上下文（图谱注入，必须遵守）】
+FP_XD_01（选择商品）：
+  上游：—（无）
+  下游：FP_XD_02（支付）
+  关联 API：API_ORDER_CREATE
+  关联规则：RULE_XD_01（必选商品规格）
+  所在流程：FLOW_下单流程（order=1）
+  已有 covers：—（首次生成）
+FP_XD_02（支付）：
+  上游：FP_XD_01（选择商品）
+  下游：—
+  关联 API：API_ORDER_PAY
+  关联规则：RULE_XD_02（金额>0）
+  所在流程：FLOW_下单流程（order=2）
+  已有 covers：—
 
 生成的 cases.json 与功能点.md 放在同一目录下。
 ```
@@ -225,21 +369,60 @@ python ~/.claude/skills/scripts/json_to_excel.py --sprint sprintN
 
 该脚本会扫描对应 sprint 目录下的 `需求功能点/*/cases.json`，按列定义写入 `testCase.xlsx`，每个模块一个 Sheet。
 
-#### P1.4 覆盖率检查
+#### P1.3.5 重建知识图谱（V2 新增，主对话调度 bf-graph-agent）
 
-若覆盖率不足 80%，对未覆盖模块追加启动 Agent 补充用例。
+Excel 生成完成后，主对话**调度 bf-graph-agent** 跑 `build`，把本次 cases.json / 功能点.md / spec.ts 全量入图谱：
+
+```
+subagent_type: bf-graph-agent
+Agent prompt：
+任务类型：build
+项目根：{当前项目根}
+mode：upsert（首次）或 rebuild（数据格式大改）
+sprint_tag：{sprintN 或 sprint0}
+```
+
+agent 执行：
+```bash
+python ~/.claude/skills/scripts/build_index.py \
+  --project {项目根} --source sprint_all --sprint-tag {sprint_tag} --build
+```
+
+返回主对话所需信息：DB 路径、节点/边统计、`overall_coverage_rate`、（P2 起）待确认依赖清单。**单一真相源**：图谱只扫 `需求文档/sprint_all/`，产物固定落 `{项目根}/需求文档/sprint_all/索引/`。全量模式（sprint0）后主对话需把 sprint0 的 cases.json 与功能点.md 同步到 sprint_all（见 A1），再跑 build；增量模式 sprintN 完成后必须 merge 回 sprint_all 再 build。
+
+#### P1.4 覆盖率检查（V2 改造：调度 bf-graph-agent）
+
+主对话**调度 bf-graph-agent** 跑 `query coverage`，读取图谱产出的 `覆盖率报告.md` 替代 V1 文本模糊匹配：
+
+```
+subagent_type: bf-graph-agent
+Agent prompt：
+任务类型：query
+项目根：{当前项目根}
+子命令：query coverage
+```
+
+agent 执行：
+```bash
+python ~/.claude/skills/scripts/build_index.py \
+  --project {项目根} --source sprint_all --query coverage
+```
+
+主对话拿到 `{modules:[...], overall:{...}}` 后判定：
+- **整体覆盖率 ≥ 80%** → 进入 P2 审核
+- **整体覆盖率 < 80%** → 把 `uncovered_fps`（未覆盖 FP 列表）作为「待补用例清单」，对每个未覆盖模块**追加启动 bf-case-generator**，prompt 明确告知「必须为以下 FP 各补 1-2 条用例：[FP_XXX_01 名称、FP_XXX_02 名称、...]」，所有补的用例 `covers` 字段必须填入对应 FP 锚点。补完后回到 P1.3 → P1.3.5 → P1.4 循环，直到达标。
 
 ### P2. 审核测试用例（主对话执行）
 
 1. 对生成的 `testCase.xlsx` 进行自检：
-   - 计算功能点覆盖率：统计 `需求文档/{sprint}/需求功能点/*/功能点.md` 中所有功能点，检查是否全部有对应用例。
-   - 检查用例可执行性：步骤是否具体、预期结果是否可验证、前置条件是否可满足。
-   - 标记可能不可执行或冗余的用例。
+   - **覆盖率数值不再重复计算**：直接读取 P1.4 由 bf-graph-agent 产出的 `覆盖率报告.md`（`{项目根}/需求文档/sprint_all/索引/覆盖率报告.md`），引用其中的整体覆盖率和未覆盖 FP 清单
+   - 检查用例可执行性：步骤是否具体、预期结果是否可验证、前置条件是否可满足
+   - 标记可能不可执行或冗余的用例（如 covers 为空、tests_api 与功能点无关联的孤儿用例）
 2. 生成审核报告，保存在 `reports/测试用例审核报告.md`，内容包括：
-   - 覆盖率数值（如 92%）
+   - 覆盖率数值（引用图谱报告）
    - 未覆盖的功能点列表及原因
    - 优化建议
-3. 如果覆盖率低于 80%，主动请求用户确认是否补充用例，并循环补充直至达标。
+3. 如果覆盖率低于 80%（P1.4 已循环过则不会再触发），主动请求用户确认是否补充用例
 
 ### P3. 接口测试（需用户触发）
 
@@ -277,8 +460,8 @@ subagent_type: bf-e2e-generator
 Agent prompt 示例：
 ```
 模块名称：数据整合
-系统地址：{SYSTEM_URL}
-测试账号：{TEST_PHONE} / {TEST_PASSWORD}
+系统地址：http://your-test-system.example.com/
+测试账号：13800138000 / your_password_here
 脚本存放路径：测试用例/{sprint}/{sprint_scripts}/
 用例文件：需求文档/{sprint}/需求功能点/数据整合/cases.json
 ```
@@ -410,13 +593,44 @@ rm -rf scripts/temp/
 
 当用户执行 `/bf-test-workflow sprintN` 时，在进入公共流程之前，需要先执行以下步骤。
 
-### 增量 Step 1：解析 PRD，识别变更模块
+### 增量 Step 1：解析 PRD，识别变更模块 + 影响面（V2 改造）
 
 1. 读取 `需求文档/sprintN/` 目录下的需求文档。
-2. 解析文档内容，提取涉及的模块列表。
+2. 解析文档内容，提取涉及的模块列表与变更的功能点 / 接口（记录变更 FP_/API_ 节点 ID 列表）。
 3. 与 `需求文档/sprint_all/需求功能点/` 对比，区分：
    - **已有模块**（sprint_all 中已存在）→ 需要从 sprint_all 复制
    - **新增模块**（sprint_all 中没有）→ 无需复制，标记为全新
+4. **V2 关键：跑影响面分析**。先**调度 bf-graph-agent** `build` 保证图谱最新（含上轮 sprintN 的功能点 merge）：
+   ```
+   subagent_type: bf-graph-agent
+   Agent prompt：
+   任务类型：build
+   项目根：{当前项目根}
+   mode：upsert
+   sprint_tag：sprintN
+   ```
+   然后对**变更 FP/API 节点**调度 `query impact`（查下游受影响）+ 对**任一变更节点**调度 `query setup`（查上游数据准备）：
+   ```
+   subagent_type: bf-graph-agent
+   Agent prompt：
+   任务类型：query
+   子命令1：query impact --query-arg FP_XD_02,API_ORDER_PAY --depth 2
+   子命令2：query setup --query-arg FP_XD_02 --depth 3
+   ```
+   主对话把两份 JSON 拼成**两栏** `影响面报告_sprintN.md` 写入 `{项目根}/需求文档/sprint_all/索引/`：
+   - **【受影响 / 可能 break】**：impact 命中节点 → 这些用例需要复核（断言可能失效）
+   - **【回归前置 / 数据准备】**：setup 命中节点 → 这些用例当 setup 重跑（提供测试数据）
+
+5. **V2 新增：处理新启发式依赖（1e 子步）**。检查 Step 4 build 返回的 `unresolved_deps` 条数：
+   - **`unresolved_deps = 0`** → 跳过此步，直接进入 Step 2
+   - **`unresolved_deps > 0`** → 主对话**通过 AskUserQuestion 逐条确认**（与 G1.3 同样的流程），用户对每条选择「确认 / 拒绝 / 修改」，确认后调度 bf-graph-agent `apply-confirmation` 写 manual 边 + 清 unresolved_deps。
+
+   > 增量场景下 unresolved_deps 的常见来源：
+   > - PRD 新流程章节产生新的 precedes/depends_on 启发式推断
+   > - 新增模块的 FP 锚点序号与已有冲突（kind=`conflict`，由 extract_fp_md 检测，见 Step 4a）
+   > - cases.json 的 tests_api 指向不存在的 api 节点（数据错误）
+   >
+   > 注意：`conflict` 类型通常意味着功能点.md 序号算错，需要回 Step 4a 修复 sprintN 的功能点.md 重新跑 4a→5a，而不是 apply-confirmation 写 manual 边。主对话应根据 kind 区分处理。
 
 ### 增量 Step 2：用户确认模块列表
 
@@ -435,21 +649,29 @@ sprintN PRD 涉及以下模块：
 
 用户可以补充或删除模块，确认后继续。
 
-### 增量 Step 3：复制相关文件
+### 增量 Step 3：复制相关文件（V2 改造：基于影响面 cp 粒度细化）
 
-根据用户确认的模块列表，从 sprint_all 复制到 sprintN：
+V2 改造点：**不再整模块复制**，而是按 Step1 影响面报告的命中范围细化复制。
 
-**已有模块**（需要复制）：
+**已有模块**（按影响面范围复制，cp 粒度从模块目录细化到具体 spec.ts test 块 + cases.json 具体用例）：
+
 ```bash
-# 功能点和用例
+# 功能点和用例：仍按模块复制（功能点.md / cases.json 需要完整快照给 generator）
 cp -r 需求文档/sprint_all/需求功能点/{模块名}/ 需求文档/sprintN/需求功能点/{模块名}/
 
-# 选择器映射
+# 选择器映射：模块级复制（selectors 是页面级资源，全量带过去）
 cp 测试用例/sprint_all/scripts/selectors/{模块名}.selectors.ts 测试用例/sprintN/sprintN_scripts/selectors/
 
-# 测试脚本
+# 测试脚本：模块级复制（spec.ts 文件作为基底，后续 generator 在范围内追加/修改 test() 块）
 cp 测试用例/sprint_all/scripts/{模块名}.spec.ts 测试用例/sprintN/sprintN_scripts/
 ```
+
+**仅复制影响面命中的模块**（不再复制未变更模块）：
+- impact 命中模块（下游可能 break）→ 复制 spec.ts + cases.json（供 generator 在范围内复核修改）
+- setup 命中模块（上游数据准备）→ 复制 spec.ts（供 generator 把这些用例当 fixture）
+- 未命中模块 → 不复制，回归时跑 sprint_all 的原脚本即可
+
+> V2 的精细化体现在 **bf-e2e-generator 的处理范围**（见 Step 4c），而非 cp 命令本身——cp 仍是模块级，但 generator 只在 impact/setup 命中的 test() 块上动作。
 
 **新增模块**（无需复制，后续全新生成）。
 
@@ -476,6 +698,7 @@ cp 测试用例/sprint_all/scripts/playwright.config.ts 测试用例/sprintN/spr
   1. 主对话直接读取 sprintN 的 PRD 文档
   2. 与已复制的功能点.md 对比，识别新增/修改的功能点
   3. 更新 sprintN 中的功能点.md（只追加/修改变更部分）
+  4. **新增/修改的功能点标题必须带 FP 锚点（沿用全量 A1 模板规则）**：格式 `## 功能点N：{名称} <!--FP_{模块缩写}_{两位序号}-->`，新增功能点序号在模块内续接已有最大序号（如已有 FP_XD_02，新增即 FP_XD_03）
 
 - **模式 B/C（主 UI 探索）**：
   1. 启动 bf-ui-explorer Agent 探索变更模块
@@ -555,20 +778,67 @@ Agent prompt：
    断言映射表：~/.claude/skills/templates/assertion-mapping.md
    ```
 
-### 增量 Step 5：覆盖回 sprint_all
+### 增量 Step 5：覆盖回 sprint_all（V2 改造：merge-as-you-go）
 
-将 sprintN 中变更过的模块覆盖回 sprint_all：
+V2 关键改造：**功能点.md 与 cases.json 在子步骤就 merge 回 sprint_all + 立即重建图谱**，Step5 只剩脚本 merge 与最终 build。这样图谱在每个子步骤之后都是最新状态，可被下一步的 query 调用。
+
+#### 5a. 功能点先 merge（4a 完成后立即执行）
 
 ```bash
-# 功能点和用例覆盖回 sprint_all
+# 4a 更新功能点.md 完成后，立即 merge 到 sprint_all
 cp -r 需求文档/sprintN/需求功能点/{变更模块}/ 需求文档/sprint_all/需求功能点/{变更模块}/
 
+# 立即调度 bf-graph-agent 重建图谱（功能点先入图谱，后续 cases.json 的 covers 才能连边）
+# 主对话调度：
+#   subagent_type: bf-graph-agent
+#   Agent prompt：任务类型：build；项目根：{项目根}；sprint_tag：sprintN
+#                  mode：<按下方规则选择>
+```
+
+**mode 选择规则（V2 修复问题 5）**：
+
+| 变更类型 | mode | 原因 |
+|---------|------|------|
+| 仅**新增**模块 / 新增 FP 锚点 / 新增用例 | **`upsert`** | 增量叠加，GC 会清理孤儿；保留 manual 边与历史节点 |
+| 涉及**修改**已有 FP 锚点 / 修改已有用例 | **`rebuild`** | 修改可能改了 ID（如 FP_XD_02 改名为 FP_XD_05），upsert 会残留旧节点；rebuild 更稳 |
+| 涉及**删除**模块 / 删除 FP / 删除用例 | **`rebuild`** | upsert 不感知删除（即使有 GC 也可能漏处理复杂删除场景）；rebuild 最干净 |
+
+> 经验法则：**有不确定时优先 `rebuild`**（sprint_all 体量通常不大，重建几秒完成）。
+> `upsert` 仅在「明确只增不改不删」的简单场景使用，性能略好但容错低。
+
+#### 5b. cases.json merge（4b 完成后）
+
+```bash
+# cases.json 是完整快照，直接覆盖
+cp 需求文档/sprintN/需求功能点/{变更模块}/cases.json 需求文档/sprint_all/需求功能点/{变更模块}/cases.json
+```
+
+#### 5c. 脚本 merge（4c/healer 完成后）
+
+```bash
 # 测试脚本覆盖回 sprint_all
 cp 测试用例/sprintN/sprintN_scripts/{变更模块}.spec.ts 测试用例/sprint_all/scripts/{变更模块}.spec.ts
 cp 测试用例/sprintN/sprintN_scripts/selectors/{变更模块}.selectors.ts 测试用例/sprint_all/scripts/selectors/{变更模块}.selectors.ts
 ```
 
-最后重新生成 sprint_all 的 testCase.xlsx：
+#### 5d. 最终重建图谱 + 重新生成 Excel
+
+所有变更 merge 完成后，最后**调度 bf-graph-agent** `build` 把 cases.json 与 spec.ts 的最新 covers/implements 边刷入图谱：
+
+```
+subagent_type: bf-graph-agent
+Agent prompt：
+任务类型：build
+项目根：{当前项目根}
+mode：<同 5a 的 mode 选择规则>
+sprint_tag：sprintN
+```
+
+**mode 选择规则（同 5a）**：仅新增 → `upsert`；涉及修改/删除 → `rebuild`；不确定优先 `rebuild`。
+
+> 5a 与 5d 用同一个 mode。若 5a 用了 rebuild，5d 也用 rebuild（保持一致）。
+
+然后重新生成 sprint_all 的 testCase.xlsx：
 ```bash
 python ~/.claude/skills/scripts/json_to_excel.py --input 需求文档/sprint_all/需求功能点 --output 测试用例/sprint_all/testCase.xlsx
 ```

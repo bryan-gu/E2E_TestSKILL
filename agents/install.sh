@@ -10,6 +10,7 @@ AGENT_FILES=(
     "bf-e2e-healer.md"
     "bf-ui-explorer.md"
     "bf-e2e-validator.md"
+    "bf-graph-agent.md"
 )
 
 if [ -z "$1" ]; then

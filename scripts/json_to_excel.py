@@ -8,8 +8,9 @@ HEADER_FILL = PatternFill(start_color='BDD7EE', end_color='BDD7EE', fill_type='s
 DATA_FONT = Font(name='微软雅黑', size=11)
 HEADER_ALIGN = Alignment(wrap_text=True, vertical='center')
 DATA_ALIGN = Alignment(wrap_text=True, vertical='top')
-COL_WIDTHS = [14.875, 16.625, 20.375, 21.125, 17.875, 26.5, 25.875, 8.675]
-HEADERS = ['测试用例ID', '模块', '标题', '前置条件', '测试数据', '测试步骤', '预期结果', '实际结果']
+COL_WIDTHS = [14.875, 16.625, 20.375, 21.125, 17.875, 26.5, 25.875, 8.675, 18.0, 18.0]
+HEADERS = ['测试用例ID', '模块', '标题', '前置条件', '测试数据', '测试步骤', '预期结果', '实际结果',
+           '覆盖功能点', '关联接口']
 
 def create_sheet(wb, name):
     ws = wb.create_sheet(title=name)
@@ -28,7 +29,18 @@ def add_row(ws, row, data):
         c = ws.cell(row=row, column=ci, value=data.get(key, ''))
         c.font = DATA_FONT
         c.alignment = DATA_ALIGN
+    # 第 8 列「实际结果」默认空（保留 V1 特例）
     ws.cell(row=row, column=8, value='')
+    # V2 新增第 9 / 10 列：覆盖功能点 / 关联接口
+    # 用 '；'.join 把数组拼成单格字符串；老 cases.json 无字段 → .get([]) → 空串（V1 兼容）
+    covers_val = '；'.join(data.get('covers', []) or [])
+    api_val = '；'.join(data.get('tests_api', []) or [])
+    c9 = ws.cell(row=row, column=9, value=covers_val)
+    c9.font = DATA_FONT
+    c9.alignment = DATA_ALIGN
+    c10 = ws.cell(row=row, column=10, value=api_val)
+    c10.font = DATA_FONT
+    c10.alignment = DATA_ALIGN
 
 def repair_json(filepath):
     """尝试修复常见的 JSON 问题（如字符串内未转义的双引号）"""

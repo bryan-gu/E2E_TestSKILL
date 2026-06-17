@@ -16,3 +16,17 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# 临时测试目录（V2 验证用，不入库）
+BF-SKILL-test/
+测试_问题*/
+
+# 项目级图谱产物（运行时生成在项目目录，不入 skill 仓库）
+# 注：以下模式供文档参考，实际产物在 {项目根}/需求文档/sprint_all/索引/
+# 知识图谱.db / 知识图谱.json / 覆盖率报告.md / 流程依赖图.md / 待确认依赖.md
