@@ -44,7 +44,7 @@ def add_row(ws, row, data):
 
 def repair_json(filepath):
     """尝试修复常见的 JSON 问题（如字符串内未转义的双引号）"""
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, 'r', encoding='utf-8-sig') as f:
         content = f.read()
     # 先尝试直接解析
     try:
@@ -92,10 +92,10 @@ def repair_json(filepath):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='将 cases.json 转换为 testCase.xlsx')
-    parser.add_argument('--input', '-i', default='需求文档/需求功能点',
-                        help='功能点目录路径（默认：需求文档/需求功能点）')
-    parser.add_argument('--output', '-o', default='测试用例/testCase.xlsx',
-                        help='输出 xlsx 路径（默认：测试用例/testCase.xlsx）')
+    parser.add_argument('--input', '-i', default='需求文档/sprint_all/需求功能点',
+                        help='功能点目录路径（默认：需求文档/sprint_all/需求功能点）')
+    parser.add_argument('--output', '-o', default='测试用例/sprint_all/testCase.xlsx',
+                        help='输出 xlsx 路径（默认：测试用例/sprint_all/testCase.xlsx）')
     parser.add_argument('--sprint', '-s', default=None,
                         help='Sprint 名称（如 sprint0、sprint1），自动设置输入输出路径')
     args = parser.parse_args()
@@ -112,12 +112,20 @@ if __name__ == '__main__':
     # 确保输出目录存在
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
-    # 如果输出文件已存在，加载它（支持按模块覆盖）
+    def new_workbook():
+        workbook = openpyxl.Workbook()
+        workbook.remove(workbook.active)
+        return workbook
+
+    # 如果输出文件已存在，加载它（支持按模块覆盖）；若上次失败留下损坏文件，则重建。
     if os.path.exists(output_file):
-        wb = openpyxl.load_workbook(output_file)
+        try:
+            wb = openpyxl.load_workbook(output_file)
+        except Exception as e:
+            print(f'  警告: 输出文件 {output_file} 无法读取，将重建 ({e})')
+            wb = new_workbook()
     else:
-        wb = openpyxl.Workbook()
-        wb.remove(wb.active)
+        wb = new_workbook()
 
     json_files = sorted(glob.glob(f'{input_dir}/*/cases.json'))
     total = 0
@@ -137,6 +145,10 @@ if __name__ == '__main__':
             add_row(ws, i, case)
         print(f'{sheet_name}: {len(cases)}条')
         total += len(cases)
+
+    if total == 0:
+        print(f'错误: 未在 {input_dir} 下找到可写入的 cases.json 用例，未生成 Excel。')
+        raise SystemExit(1)
 
     wb.save(output_file)
     print(f'总计: {total}条测试用例 → {output_file}')

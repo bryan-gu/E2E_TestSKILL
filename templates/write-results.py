@@ -5,7 +5,7 @@
     python write_results.py <xlsx路径> <Sheet名> <结果JSON>
 
 示例:
-    python write_results.py "测试用例/testCase.xlsx" "数据整合" '{"TC_001":"通过","TC_002":"失败-超时"}'
+    python write_results.py "测试用例/sprint_all/testCase.xlsx" "数据整合" '{"TC_001":"通过","TC_002":"失败-超时"}'
 
 结果JSON格式: {用例ID: 结果文本}
     - 通过: "通过"

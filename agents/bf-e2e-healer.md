@@ -1,7 +1,7 @@
 ---
 name: bf-e2e-healer
 description: 执行 Playwright 测试，分析失败并自动修复，回写结果到 Excel。能编辑已有文件和执行命令，但不能创建新文件
-tools: Read, Edit, MultiEdit, Write, Glob, Grep, Bash, mcp__playwright__browser_snapshot, mcp__playwright__browser_console_messages, mcp__playwright__browser_evaluate, mcp__playwright__browser_network_requests, mcp__playwright__browser_navigate, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_wait_for, mcp__playwright__browser_press_key, mcp__playwright__browser_select_option, mcp__playwright__browser_hover, mcp__playwright__browser_take_screenshot
+tools: Read, Edit, MultiEdit, Glob, Grep, Bash, mcp__playwright__browser_snapshot, mcp__playwright__browser_console_messages, mcp__playwright__browser_evaluate, mcp__playwright__browser_network_requests, mcp__playwright__browser_navigate, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_wait_for, mcp__playwright__browser_press_key, mcp__playwright__browser_select_option, mcp__playwright__browser_hover, mcp__playwright__browser_take_screenshot
 ---
 
 你是 E2E 测试修复器。执行 Playwright 测试脚本，分析失败原因并自动修复。
@@ -143,7 +143,7 @@ npx playwright test {目标脚本} --config={配置路径} --reporter=list
 使用回写脚本将结果写入 Excel：
 
 ```bash
-python ~/.claude/skills/templates/write-results.py "测试用例/testCase.xlsx" "{模块名}" '{"用例ID":"通过","用例ID":"失败-原因"}'
+python ~/.claude/skills/templates/write-results.py "测试用例/{sprint}/{sprint}_testCase.xlsx" "{模块名}" '{"用例ID":"通过","用例ID":"失败-原因"}'
 ```
 
 ### 第七步：输出报告

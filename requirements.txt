@@ -1,12 +1,14 @@
 # BF 测试 Skill 依赖
-# 安装：pip install -r ~/.claude/skills/requirements.txt
+# 安装核心依赖：pip install -r ~/.claude/skills/requirements.txt
 
-# V1：用例 / 文档 / Excel 处理
+# 核心：用例 / 文档 / Excel / 图谱
 python-docx>=0.8.11
 openpyxl>=3.0.0
 pypdf>=3.0.0
 
-# V2 知识图谱（build_index.py）
-# sqlite3：Python 标准库内置，无需 pip 安装。
-# FTS5：随 sqlite3 内置；若发行版剥离了 FTS5 编译选项，build_index.py
-#       会自动降级为 LIKE 查询（功能等价，性能略低）。无需 pip 安装。
+# 可选：仅在对应输入类型需要时安装
+# pdfplumber>=0.11.0      # PDF 复杂表格/版式提取
+# xmindparser>=1.0.9      # XMind 需求文档解析
+# pytesseract>=0.3.10     # 图片 OCR，需要本机另装 Tesseract OCR
+
+# sqlite3 是 Python 标准库；FTS5 若不可用，build_index.py 自动降级 LIKE 查询。

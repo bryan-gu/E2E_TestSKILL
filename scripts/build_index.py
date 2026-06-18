@@ -149,7 +149,7 @@ def repair_json(filepath):
 
     返回解析后的 Python 对象；失败返回 None 并打印警告。
     """
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, 'r', encoding='utf-8-sig') as f:
         content = f.read()
     try:
         return json.loads(content)
@@ -277,8 +277,8 @@ def extract_fp_md(con, sprint_all_root, sprint_tag):
             rule_m = re.search(r'\*\*业务规则\*\*[：:]\s*(.+?)(?=\n- \*\*|\Z)', section, re.S)
             if rule_m:
                 rule_text = rule_m.group(1).strip().split('\n')[0][:200]
-                rule_seq = f'{fp_id.split("_")[-1]}{seq}'.zfill(2)[-2:]
-                rule_id = f'RULE_{fp_id.split("_")[1]}_{rule_seq}'
+                rule_seq = fp_id.split('_')[-1]
+                rule_id = f"RULE_{fp_id.split('_')[1]}_{rule_seq}"
                 upsert_node(con, rule_id, 'rule', rule_text[:80], module=rel_module,
                             sprint=sprint_tag, content=rule_text, source_path=md_path,
                             provenance='from-fp-md')

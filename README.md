@@ -300,7 +300,7 @@ npx playwright test 测试用例/sprint_all/scripts/{模块名}.spec.ts
   "module": "数据整合",
   "title": "正常登录并查看数据列表",
   "precondition": "1. 系统可访问；2. 测试账号有效",
-  "test_data": "账号: {TEST_PHONE}, 密码: {TEST_PASSWORD}",
+  "test_data": "账号: {TEST_USERNAME}, 密码: {TEST_PASSWORD}",
   "steps": "1. 用户输入用户名、密码点击登录。\n2. 点击「数据整合」菜单。\n3. 查看数据列表。",
   "expected": "1. 登录成功，跳转首页。\n2. 进入数据整合页面。\n3. 列表正确加载，显示数据。",
   "covers": ["FP_SJZH_01"],
@@ -481,7 +481,7 @@ pip install -r requirements.txt
 |------|------|------|
 | **项目前缀** | 2-4 位大写字母 | SPD、NJ、BF |
 | **系统地址** | 被测系统 URL | http://your-test-system.example.com/ |
-| **测试账号** | 登录用户名 | 13800138000 |
+| **测试账号** | 登录用户名 | your_test_account |
 | **测试密码** | 对应密码 | your_password_here |
 
 ### 初始化方式
@@ -491,7 +491,7 @@ pip install -r requirements.txt
 /init-bf
 
 # 手动指定参数
-/init-bf SPD http://your-test-system.example.com/login 13800138000 your_password_here
+/init-bf SPD http://your-test-system.example.com/login your_test_account your_password_here
 
 # 混合方式
 /init-bf SPD

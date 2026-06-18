@@ -55,7 +55,7 @@ browser_evaluate({
 
 ### 第三步：批量生成测试脚本
 
-1. 读取 `需求文档/需求功能点/{模块名}/cases.json`，这是 JSON 数组，每条用例包含：
+1. 读取主对话传入的 `需求文档/{sprint}/需求功能点/{模块名}/cases.json` 或 `需求文档/sprint_all/需求功能点/{模块名}/cases.json`，这是 JSON 数组，每条用例包含：
    - `id`：用例ID（如 SPD_TC_CGTJ_004）
    - `title`：用例标题
    - `steps`：测试步骤（`\n` 分隔的有序列表）
@@ -79,13 +79,13 @@ browser_evaluate({
 
 ## 注意事项
 
-- 你**不能**编辑已有文件（没有 Edit 工具），只能创建新文件。当目标 spec.ts 或 selectors.ts 已存在时，必须先 Read 完整内容，在 Write 时将已有内容完整保留并仅追加新增部分，不得覆盖或丢失已有的 test() 块和选择器
+- 你**没有 Edit 工具**。当目标 spec.ts 或 selectors.ts 已存在时，必须先 Read 完整内容，再用 Write 重写完整文件；重写内容必须完整保留未变更的 test() 块和选择器，仅追加或替换明确变更部分
 - 你**不能**执行测试（没有 Bash 和 test_run），只负责生成
 - **禁止使用 `waitForLoadState('networkidle')`**，这是已废弃的 API。改为等待具体元素可见（如 `await page.getByRole('button', { name: '提交' }).waitFor()`）或 `waitForSelector`
 - AI 对话场景等待 >= 8 秒（`waitForTimeout(8000)`）
 - toast/notification 使用 `[class*="toast"], [class*="message"], [class*="notification"]` 定位
 - 生成完成后报告：生成了哪些文件、用例总数、选择器数量
-- 增量模式时，如果已有脚本和选择器路径，必须先 Read 已有内容，在 Write 时将已有内容完整保留并仅追加/修改变更部分，不得覆盖或丢失已有的 test() 块和选择器
+- 增量模式时，如果已有脚本和选择器路径，必须先 Read 已有内容，再 Write 完整文件；未在影响面范围内的 test() 块和选择器必须逐字保留
 - **V2 影响面范围规则**（增量模式且主对话注入了 `impact_review_case_ids` / `setup_fixture_case_ids` 时生效）：
   - 只对 `impact_review_case_ids` 列表中的用例 test() 块进行修改/重写（这些断言可能因下游变更失效，需重新录制 + 重新生成断言）
   - `setup_fixture_case_ids` 中的用例**不动其实现**，但其他用例如需依赖它们准备的数据，应通过 `test.describe.serial` 或调用其关键步骤作为前置（**不要复制粘贴 setup 用例的代码**，复用既有实现）

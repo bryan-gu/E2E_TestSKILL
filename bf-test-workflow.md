@@ -287,7 +287,7 @@ python ~/.claude/skills/scripts/build_index.py \
 
 #### P1.1 准备工作（主对话执行）
 
-1. 读取 `测试用例/测试用例模板.xlsx`，获取列定义与样式。
+1. 若存在 `测试用例/测试用例模板.xlsx`，参考其业务列名；最终 Excel 以 `references/contracts.md` 的 10 列契约为准。
 2. **确定项目前缀**：使用 AskUserQuestion 询问用户。
 3. 统计 `需求文档/{sprint}/需求功能点/` 下所有模块，为每个模块确定**模块缩写**。
 4. 确认脚本存在：`~/.claude/skills/scripts/json_to_excel.py`。
@@ -461,7 +461,7 @@ Agent prompt 示例：
 ```
 模块名称：数据整合
 系统地址：http://your-test-system.example.com/
-测试账号：13800138000 / your_password_here
+测试账号：your_test_account / your_admin_account
 脚本存放路径：测试用例/{sprint}/{sprint_scripts}/
 用例文件：需求文档/{sprint}/需求功能点/数据整合/cases.json
 ```
